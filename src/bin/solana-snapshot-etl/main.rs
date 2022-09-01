@@ -3,6 +3,7 @@ use crate::geyser::GeyserDumper;
 use crate::geyser_plugin::load_plugin;
 use crate::programs::ProgramDumper;
 use crate::sqlite::SqliteIndexer;
+use crate::postgres::PostgresIndexer;
 use clap::{ArgGroup, Parser};
 use indicatif::{ProgressBar, ProgressBarIter, ProgressStyle};
 use log::{error, info};
@@ -19,6 +20,7 @@ mod csv;
 mod geyser;
 mod geyser_plugin;
 mod mpl_metadata;
+mod postgres;
 mod programs;
 mod sqlite;
 
@@ -27,7 +29,7 @@ mod sqlite;
 #[clap(group(
     ArgGroup::new("action")
         .required(true)
-        .args(&["csv", "geyser", "sqlite-out", "programs-out"]),
+        .args(&["csv", "geyser", "sqlite-out", "postgres-out", "programs-out"]),
 ))]
 struct Args {
     #[clap(help = "Snapshot source (unpacked snapshot, archive file, or HTTP link)")]
@@ -38,12 +40,16 @@ struct Args {
     sqlite_out: Option<String>,
     #[clap(long, help = "SQLite3 cache size in MB")]
     sqlite_cache_size: Option<i64>,
-    #[clap(long, action, help = "Index token program data")]
-    tokens: bool,
     #[clap(long, help = "Load Geyser plugin from given config file")]
     geyser: Option<String>,
     #[clap(long, help = "Write programs tar stream")]
     programs_out: Option<String>,
+    #[clap(long, help = "Export to Postgres DB at this connection string")]
+    postgres_out: Option<String>,
+    #[clap(long, help = "Postgres insert batch size", default_value_t=500)]
+    postgres_batch_size: usize,
+    #[clap(long, help = "Postgres threads", default_value_t=8)]
+    postgres_threads: usize,
 }
 
 fn main() {
@@ -94,6 +100,16 @@ fn _main() -> Result<(), Box<dyn std::error::Error>> {
             indexer.set_cache_size(cache_size)?;
         }
         let stats = indexer.insert_all(loader.iter())?;
+
+        info!("Done!");
+        info!("Dumped {} accounts", stats.accounts_total);
+        info!("Dumped {} token accounts", stats.token_accounts_total);
+    }
+    if let Some(connection_str) = args.postgres_out {
+        info!("Dumping to Postgres: {}", &connection_str);
+
+        let indexer = PostgresIndexer::new(connection_str, args.postgres_batch_size)?;
+        let stats = indexer.insert_all_parallel(loader.iter(), args.postgres_threads)?;
 
         info!("Done!");
         info!("Dumped {} accounts", stats.accounts_total);

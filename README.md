@@ -23,7 +23,7 @@ Despite archives being readily available, the ecosystem was missing an easy-to-u
 ## Building
 
 ```shell
-cargo install --git https://github.com/terorie/solana-snapshot-etl --features=standalone --bins
+cargo install --git https://github.com/kunalmodi/solana-snapshot-etl --features=standalone --bins
 ```
 
 ## Usage
@@ -63,7 +63,22 @@ solana-snapshot-etl 'https://my-solana-node.bdnodes.net/snapshot.tar.zst?auth=xx
 
 ### Targets
 
-#### SQLite3 (recommended)
+#### Postgres
+
+Dump all accounts and certain other tables to a Postgres database. Writes are batched, and occur in a configurable number of threads.
+
+```shell
+solana-snapshot-etl snapshot-139240745-*.tar.zst --postgres-out "user=solana password= host=localhost dbname=solana options='-c synchronous_commit=off'" --postgres-threads 16 --postgres-batch-size 500
+```
+
+The resulting SQLite database contains the following tables.
+
+- `account`
+- `token_account` (SPL Token Program)
+- `token_mint` (SPL Token Program)
+- `token_metadata` (MPL Metadata Program)
+
+#### SQLite3
 
 The fastest way to access snapshot data is the SQLite3 load mechanism.
 
