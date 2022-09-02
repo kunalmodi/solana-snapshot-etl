@@ -11,7 +11,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use crate::mpl_metadata;
+use crate::programs::mpl_metadata;
 
 pub(crate) type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 

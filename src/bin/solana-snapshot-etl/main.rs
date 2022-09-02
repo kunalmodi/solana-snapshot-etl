@@ -19,7 +19,6 @@ use std::path::{Path, PathBuf};
 mod csv;
 mod geyser;
 mod geyser_plugin;
-mod mpl_metadata;
 mod postgres;
 mod programs;
 mod sqlite;
@@ -108,7 +107,7 @@ fn _main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(connection_str) = args.postgres_out {
         info!("Dumping to Postgres: {}", &connection_str);
 
-        let indexer = PostgresIndexer::new(connection_str, args.postgres_batch_size)?;
+        let mut indexer = PostgresIndexer::new(connection_str, args.postgres_batch_size)?;
         let stats = indexer.insert_all_parallel(loader.iter(), args.postgres_threads)?;
 
         info!("Done!");

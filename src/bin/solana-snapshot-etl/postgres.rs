@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time;
 
-use crate::mpl_metadata;
+use crate::programs::mpl_metadata;
 
 pub(crate) type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -38,6 +38,23 @@ struct Progress {
 pub(crate) struct IndexStats {
     pub(crate) accounts_total: u64,
     pub(crate) token_accounts_total: u64,
+}
+
+impl AppendVecConsumerFactory for PostgresIndexer {
+    type Consumer = Worker;
+
+    fn new_consumer(&mut self) -> GenericResult<Self::Consumer> {
+        let db = Client::connect(&self.connection_str, NoTls)?;
+        Ok(Worker {
+            db: db,
+            batch_size: self.batch_size,
+            progress: Arc::clone(&self.progress),
+            queue_account: Vec::with_capacity(self.batch_size),
+            queue_token_account: Vec::with_capacity(self.batch_size),
+            queue_token_mint: Vec::with_capacity(self.batch_size),
+            queue_token_metadata: Vec::with_capacity(self.batch_size),
+        })
+    }
 }
 
 impl PostgresIndexer {
@@ -87,16 +104,11 @@ impl PostgresIndexer {
     }
 
     pub(crate) fn insert_all_parallel(
-        self,
+        &mut self,
         iterator: AppendVecIterator,
         num_threads: usize,
     ) -> Result<IndexStats> {
-        let mut factory = WorkerFactory {
-            connection_str: self.connection_str,
-            batch_size: self.batch_size,
-            progress: Arc::clone(&self.progress),
-        };
-        par_iter_append_vecs(iterator, &mut factory, num_threads)?;
+        par_iter_append_vecs(iterator, self, num_threads)?;
         let stats = IndexStats {
             accounts_total: self.progress.accounts_counter.get(),
             token_accounts_total: self.progress.token_accounts_counter.get(),
@@ -106,7 +118,7 @@ impl PostgresIndexer {
     }
 }
 
-struct Worker {
+pub struct Worker {
     db: Client,
     batch_size: usize,
     progress: Arc<Progress>,
@@ -569,29 +581,6 @@ impl Worker {
                 Err(Box::new(e))
             }
         }
-    }
-}
-
-struct WorkerFactory {
-    connection_str: String,
-    batch_size: usize,
-    progress: Arc<Progress>,
-}
-
-impl AppendVecConsumerFactory for WorkerFactory {
-    type Consumer = Worker;
-
-    fn new_consumer(&mut self) -> GenericResult<Self::Consumer> {
-        let db = Client::connect(&self.connection_str, NoTls)?;
-        Ok(Worker {
-            db: db,
-            batch_size: self.batch_size,
-            progress: Arc::clone(&self.progress),
-            queue_account: Vec::with_capacity(self.batch_size),
-            queue_token_account: Vec::with_capacity(self.batch_size),
-            queue_token_mint: Vec::with_capacity(self.batch_size),
-            queue_token_metadata: Vec::with_capacity(self.batch_size),
-        })
     }
 }
 

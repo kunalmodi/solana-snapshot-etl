@@ -9,6 +9,8 @@ use std::io::Write;
 use std::rc::Rc;
 use tar::{Builder, Header};
 
+pub mod mpl_metadata;
+
 pub(crate) struct ProgramDumper {
     builder: Builder<Box<dyn Write>>,
 }
