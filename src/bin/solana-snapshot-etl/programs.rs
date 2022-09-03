@@ -10,6 +10,7 @@ use std::rc::Rc;
 use tar::{Builder, Header};
 
 pub mod mpl_metadata;
+pub mod spl_name_service;
 
 pub(crate) struct ProgramDumper {
     builder: Builder<Box<dyn Write>>,

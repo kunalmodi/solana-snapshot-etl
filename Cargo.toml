@@ -41,6 +41,9 @@ json5 = { version = "0.4.1", optional = true }
 postgres = { version = "0.19.4", optional = true }
 postgres-types = { version = "0.2.4", optional = true }
 rand = { version = "0.8.5", optional = true }
+spl-name-service = "0.2.0"
+bs58 = "0.4.0"
+sha2 = "0.10.5"
 
 [features]
 parallel = []

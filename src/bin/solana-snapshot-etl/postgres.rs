@@ -18,12 +18,14 @@ use std::thread;
 use std::time;
 
 use crate::programs::mpl_metadata;
+use crate::programs::spl_name_service;
 
 pub(crate) type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub(crate) struct PostgresIndexer {
     connection_str: String,
     batch_size: usize,
+    name_service: Arc<spl_name_service::NameRecordService>,
 
     multi_progress: MultiProgress,
     progress: Arc<Progress>,
@@ -38,6 +40,8 @@ struct Progress {
 pub(crate) struct IndexStats {
     pub(crate) accounts_total: u64,
     pub(crate) token_accounts_total: u64,
+    pub(crate) token_metadata_total: u64,
+    pub(crate) name_service_total: u64,
 }
 
 impl AppendVecConsumerFactory for PostgresIndexer {
@@ -48,6 +52,7 @@ impl AppendVecConsumerFactory for PostgresIndexer {
         Ok(Worker {
             db: db,
             batch_size: self.batch_size,
+            name_service: Arc::clone(&self.name_service),
             progress: Arc::clone(&self.progress),
             queue_account: Vec::with_capacity(self.batch_size),
             queue_token_account: Vec::with_capacity(self.batch_size),
@@ -91,9 +96,12 @@ impl PostgresIndexer {
             ),
         );
 
+        let name_service = Arc::new(spl_name_service::NameRecordService::new());
+
         Ok(Self {
             connection_str,
             batch_size,
+            name_service,
             multi_progress,
             progress: Arc::new(Progress {
                 accounts_counter,
@@ -109,9 +117,15 @@ impl PostgresIndexer {
         num_threads: usize,
     ) -> Result<IndexStats> {
         par_iter_append_vecs(iterator, self, num_threads)?;
+
+        let mut worker = self.new_consumer()?;
+        let name_service_total = worker.insert_name_service_records()?;
+
         let stats = IndexStats {
             accounts_total: self.progress.accounts_counter.get(),
             token_accounts_total: self.progress.token_accounts_counter.get(),
+            token_metadata_total: self.progress.metaplex_accounts_counter.get(),
+            name_service_total,
         };
         let _ = &self.multi_progress;
         Ok(stats)
@@ -121,6 +135,7 @@ impl PostgresIndexer {
 pub struct Worker {
     db: Client,
     batch_size: usize,
+    name_service: Arc<spl_name_service::NameRecordService>,
     progress: Arc<Progress>,
 
     queue_account: Vec<Account>,
@@ -209,6 +224,9 @@ impl Worker {
         }
         if account_meta.account_meta.owner == mpl_metadata::id() {
             self.insert_token_metadata(account_meta)?;
+        }
+        if account_meta.account_meta.owner == spl_name_service::id() {
+            self.name_service.insert_account(account_meta);
         }
         self.progress.accounts_counter.inc();
         Ok(())
@@ -560,6 +578,68 @@ impl Worker {
         Ok(())
     }
 
+    fn insert_name_service_records(&mut self) -> Result<u64> {
+        let records = self.name_service.get_records();
+        let records_chunked: Vec<&[spl_name_service::Record]> =
+            records.chunks(self.batch_size).collect();
+        for chunk in records_chunked {
+            self.insert_name_service_records_all(chunk)?;
+        }
+        Ok(records.len() as u64)
+    }
+
+    fn insert_name_service_records_all(
+        &mut self,
+        records: &[spl_name_service::Record],
+    ) -> Result<()> {
+        if records.len() == 0 {
+            return Ok(());
+        }
+        let mut params_prep: Vec<Box<dyn ToSql + Sync>> = Vec::new();
+        let mut i = 1;
+        let mut values = "".to_string();
+        for record in records {
+            if i > 1 {
+                values = format!("{}, ", values);
+            }
+            values = format!(
+                "{} (${}, ${}, ${}, ${}, ${})",
+                values,
+                i,
+                i + 1,
+                i + 2,
+                i + 3,
+                i + 4,
+            );
+            params_prep.push(Box::new(pk(record.pubkey)));
+            params_prep.push(Box::new(pk(record.owner)));
+            params_prep.push(Box::new(record.record_type.clone()));
+            params_prep.push(Box::new(record.record.clone()));
+            params_prep.push(Box::new(u64_sql(record.write_version)));
+            i += 5;
+        }
+        let query = format!(
+            "
+            INSERT INTO name_service AS tbl (pubkey, owner, record_type, record, write_version)
+            VALUES {}
+            ON CONFLICT (pubkey) DO UPDATE SET
+                pubkey=excluded.pubkey,
+                owner=excluded.owner,
+                record_type=excluded.record_type,
+                record=excluded.record,
+                write_version=excluded.write_version
+            WHERE tbl.write_version < excluded.write_version
+        ",
+            values
+        );
+        let params: Vec<&(dyn ToSql + Sync)> = params_prep
+            .iter()
+            .map(|x| x.as_ref() as &(dyn ToSql + Sync))
+            .collect();
+        Self::execute_with_retry(&mut self.db, query, params, 1)?;
+        Ok(())
+    }
+
     fn execute_with_retry(
         db: &mut Client,
         query: String,
@@ -672,6 +752,13 @@ CREATE TABLE IF NOT EXISTS token_metadata (
     edition_nonce INT,
     collection_verified BOOLEAN,
     collection_key BYTEA,
+    write_version BIGINT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS name_service (
+    pubkey BYTEA PRIMARY KEY,
+    owner BYTEA NOT NULL,
+    record_type TEXT NOT NULL,
+    record TEXT NOT NULL,
     write_version BIGINT NOT NULL
 );
 ";

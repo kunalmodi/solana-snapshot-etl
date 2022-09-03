@@ -1,9 +1,9 @@
 use crate::csv::CsvDumper;
 use crate::geyser::GeyserDumper;
 use crate::geyser_plugin::load_plugin;
+use crate::postgres::PostgresIndexer;
 use crate::programs::ProgramDumper;
 use crate::sqlite::SqliteIndexer;
-use crate::postgres::PostgresIndexer;
 use clap::{ArgGroup, Parser};
 use indicatif::{ProgressBar, ProgressBarIter, ProgressStyle};
 use log::{error, info};
@@ -45,9 +45,9 @@ struct Args {
     programs_out: Option<String>,
     #[clap(long, help = "Export to Postgres DB at this connection string")]
     postgres_out: Option<String>,
-    #[clap(long, help = "Postgres insert batch size", default_value_t=500)]
+    #[clap(long, help = "Postgres insert batch size", default_value_t = 500)]
     postgres_batch_size: usize,
-    #[clap(long, help = "Postgres threads", default_value_t=8)]
+    #[clap(long, help = "Postgres threads", default_value_t = 8)]
     postgres_threads: usize,
 }
 
@@ -113,6 +113,8 @@ fn _main() -> Result<(), Box<dyn std::error::Error>> {
         info!("Done!");
         info!("Dumped {} accounts", stats.accounts_total);
         info!("Dumped {} token accounts", stats.token_accounts_total);
+        info!("Dumped {} token metadata", stats.token_metadata_total);
+        info!("Dumped {} name service", stats.name_service_total);
     }
     if let Some(programs) = args.programs_out {
         info!("Dumping program accounts to {}", &programs);
