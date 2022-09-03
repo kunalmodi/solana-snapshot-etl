@@ -245,23 +245,8 @@ impl Worker {
             return Ok(());
         }
         let mut params_prep: Vec<Box<dyn ToSql + Sync>> = Vec::new();
-        let mut i = 1;
-        let mut values = "".to_string();
+        let mut cnt = 0;
         for account in self.queue_account.drain(..) {
-            if i > 1 {
-                values = format!("{}, ", values);
-            }
-            values = format!(
-                "{} (${}, ${}, ${}, ${}, ${}, ${}, ${})",
-                values,
-                i,
-                i + 1,
-                i + 2,
-                i + 3,
-                i + 4,
-                i + 5,
-                i + 6,
-            );
             params_prep.push(Box::new(pk(account.pubkey)));
             params_prep.push(Box::new(u64_sql(account.data_len)));
             params_prep.push(Box::new(pk(account.owner)));
@@ -269,29 +254,11 @@ impl Worker {
             params_prep.push(Box::new(account.executable));
             params_prep.push(Box::new(u64_sql(account.rent_epoch)));
             params_prep.push(Box::new(u64_sql(account.write_version)));
-            i += 7;
+            cnt += 1;
         }
 
-        let query = format!(
-            "
-            INSERT INTO account AS tbl (pubkey, data_len, owner, lamports, executable, rent_epoch, write_version)
-            VALUES {}
-            ON CONFLICT (pubkey) DO UPDATE SET
-                data_len=excluded.data_len,
-                owner=excluded.owner,
-                lamports=excluded.lamports,
-                executable=excluded.executable,
-                rent_epoch=excluded.rent_epoch,
-                write_version=excluded.write_version
-            WHERE tbl.write_version < excluded.write_version
-        ",
-            values
-        );
-        let params: Vec<&(dyn ToSql + Sync)> = params_prep
-            .iter()
-            .map(|x| x.as_ref() as &(dyn ToSql + Sync))
-            .collect();
-        Self::execute_with_retry(&mut self.db, query, params, 1)?;
+        let query = INSERT_ACCOUNT.replace("{}", &Self::generate_values(cnt, 7));
+        Self::execute_with_retry(&mut self.db, query, params_prep, 1)?;
         Ok(())
     }
 
@@ -354,26 +321,8 @@ impl Worker {
             return Ok(());
         }
         let mut params_prep: Vec<Box<dyn ToSql + Sync>> = Vec::new();
-        let mut i = 1;
-        let mut values = "".to_string();
+        let mut cnt = 0;
         for token_account in self.queue_token_account.drain(..) {
-            if i > 1 {
-                values = format!("{}, ", values);
-            }
-            values = format!(
-                "{} (${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
-                values,
-                i,
-                i + 1,
-                i + 2,
-                i + 3,
-                i + 4,
-                i + 5,
-                i + 6,
-                i + 7,
-                i + 8,
-                i + 9
-            );
             params_prep.push(Box::new(pk(token_account.pubkey)));
             params_prep.push(Box::new(pk(token_account.mint)));
             params_prep.push(Box::new(pk(token_account.owner)));
@@ -384,29 +333,10 @@ impl Worker {
             params_prep.push(Box::new(u64_sql(token_account.delegated_amount)));
             params_prep.push(Box::new(token_account.close_authority.map(|t| pk(t))));
             params_prep.push(Box::new(u64_sql(token_account.write_version)));
-            i += 10;
+            cnt += 1;
         }
-        let query = format!("
-            INSERT INTO token_account AS tbl (pubkey, mint, owner, amount, delegate, state, is_native, delegated_amount, close_authority, write_version)
-            VALUES {}
-            ON CONFLICT (pubkey) DO UPDATE SET
-                pubkey=excluded.pubkey,
-                mint=excluded.mint,
-                owner=excluded.owner,
-                amount=excluded.amount,
-                delegate=excluded.delegate,
-                state=excluded.state,
-                is_native=excluded.is_native,
-                delegated_amount=excluded.delegated_amount,
-                close_authority=excluded.close_authority,
-                write_version=excluded.write_version
-            WHERE tbl.write_version < excluded.write_version
-        ", values);
-        let params: Vec<&(dyn ToSql + Sync)> = params_prep
-            .iter()
-            .map(|x| x.as_ref() as &(dyn ToSql + Sync))
-            .collect();
-        Self::execute_with_retry(&mut self.db, query, params, 1)?;
+        let query = INSERT_TOKEN_ACCOUNT.replace("{}", &Self::generate_values(cnt, 10));
+        Self::execute_with_retry(&mut self.db, query, params_prep, 1)?;
         Ok(())
     }
 
@@ -415,23 +345,8 @@ impl Worker {
             return Ok(());
         }
         let mut params_prep: Vec<Box<dyn ToSql + Sync>> = Vec::new();
-        let mut i = 1;
-        let mut values = "".to_string();
+        let mut cnt = 0;
         for token_mint in self.queue_token_mint.drain(..) {
-            if i > 1 {
-                values = format!("{}, ", values);
-            }
-            values = format!(
-                "{} (${}, ${}, ${}, ${}, ${}, ${}, ${})",
-                values,
-                i,
-                i + 1,
-                i + 2,
-                i + 3,
-                i + 4,
-                i + 5,
-                i + 6,
-            );
             params_prep.push(Box::new(pk(token_mint.pubkey)));
             params_prep.push(Box::new(token_mint.mint_authority.map(|m| pk(m))));
             params_prep.push(Box::new(u64_sql(token_mint.supply)));
@@ -439,26 +354,10 @@ impl Worker {
             params_prep.push(Box::new(token_mint.is_initialized));
             params_prep.push(Box::new(token_mint.freeze_authority.map(|t| pk(t))));
             params_prep.push(Box::new(u64_sql(token_mint.write_version)));
-            i += 7;
+            cnt += 1;
         }
-        let query = format!("
-            INSERT INTO token_mint AS tbl (pubkey, mint_authority, supply, decimals, is_initialized, freeze_authority, write_version)
-            VALUES {}
-            ON CONFLICT (pubkey) DO UPDATE SET
-                pubkey=excluded.pubkey,
-                mint_authority=excluded.mint_authority,
-                supply=excluded.supply,
-                decimals=excluded.decimals,
-                is_initialized=excluded.is_initialized,
-                freeze_authority=excluded.freeze_authority,
-                write_version=excluded.write_version
-            WHERE tbl.write_version < excluded.write_version
-        ", values);
-        let params: Vec<&(dyn ToSql + Sync)> = params_prep
-            .iter()
-            .map(|x| x.as_ref() as &(dyn ToSql + Sync))
-            .collect();
-        Self::execute_with_retry(&mut self.db, query, params, 1)?;
+        let query = INSERT_TOKEN_MINT.replace("{}", &Self::generate_values(cnt, 7));
+        Self::execute_with_retry(&mut self.db, query, params_prep, 1)?;
         Ok(())
     }
 
@@ -516,28 +415,8 @@ impl Worker {
             return Ok(());
         }
         let mut params_prep: Vec<Box<dyn ToSql + Sync>> = Vec::new();
-        let mut i = 1;
-        let mut values = "".to_string();
+        let mut cnt = 0;
         for metadata in self.queue_token_metadata.drain(..) {
-            if i > 1 {
-                values = format!("{}, ", values);
-            }
-            values = format!(
-                "{} (${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
-                values,
-                i,
-                i + 1,
-                i + 2,
-                i + 3,
-                i + 4,
-                i + 5,
-                i + 6,
-                i + 7,
-                i + 8,
-                i + 9,
-                i + 10,
-                i + 11,
-            );
             params_prep.push(Box::new(pk(metadata.pubkey)));
             params_prep.push(Box::new(pk(metadata.mint)));
             params_prep.push(Box::new(metadata.name));
@@ -550,31 +429,10 @@ impl Worker {
             params_prep.push(Box::new(metadata.collection_verified));
             params_prep.push(Box::new(metadata.collection_key.map(|t| pk(t))));
             params_prep.push(Box::new(u64_sql(metadata.write_version)));
-            i += 12;
+            cnt += 1;
         }
-        let query = format!("
-            INSERT INTO token_metadata AS tbl (pubkey, mint, name, symbol, uri, seller_fee_basis_points, primary_sale_happened, is_mutable, edition_nonce, collection_verified, collection_key, write_version)
-            VALUES {}
-            ON CONFLICT (pubkey) DO UPDATE SET
-                pubkey=excluded.pubkey,
-                mint=excluded.mint,
-                name=excluded.name,
-                symbol=excluded.symbol,
-                uri=excluded.uri,
-                seller_fee_basis_points=excluded.seller_fee_basis_points,
-                primary_sale_happened=excluded.primary_sale_happened,
-                is_mutable=excluded.is_mutable,
-                edition_nonce=excluded.edition_nonce,
-                collection_verified=excluded.collection_verified,
-                collection_key=excluded.collection_key,
-                write_version=excluded.write_version
-            WHERE tbl.write_version < excluded.write_version
-        ", values);
-        let params: Vec<&(dyn ToSql + Sync)> = params_prep
-            .iter()
-            .map(|x| x.as_ref() as &(dyn ToSql + Sync))
-            .collect();
-        Self::execute_with_retry(&mut self.db, query, params, 1)?;
+        let query = INSERT_TOKEN_METADATA.replace("{}", &Self::generate_values(cnt, 12));
+        Self::execute_with_retry(&mut self.db, query, params_prep, 1)?;
         Ok(())
     }
 
@@ -596,56 +454,42 @@ impl Worker {
             return Ok(());
         }
         let mut params_prep: Vec<Box<dyn ToSql + Sync>> = Vec::new();
-        let mut i = 1;
-        let mut values = "".to_string();
+        let mut cnt = 0;
         for record in records {
-            if i > 1 {
-                values = format!("{}, ", values);
-            }
-            values = format!(
-                "{} (${}, ${}, ${}, ${}, ${})",
-                values,
-                i,
-                i + 1,
-                i + 2,
-                i + 3,
-                i + 4,
-            );
             params_prep.push(Box::new(pk(record.pubkey)));
             params_prep.push(Box::new(pk(record.owner)));
             params_prep.push(Box::new(record.record_type.clone()));
             params_prep.push(Box::new(record.record.clone()));
             params_prep.push(Box::new(u64_sql(record.write_version)));
-            i += 5;
+            cnt += 1;
         }
-        let query = format!(
-            "
-            INSERT INTO name_service AS tbl (pubkey, owner, record_type, record, write_version)
-            VALUES {}
-            ON CONFLICT (pubkey) DO UPDATE SET
-                pubkey=excluded.pubkey,
-                owner=excluded.owner,
-                record_type=excluded.record_type,
-                record=excluded.record,
-                write_version=excluded.write_version
-            WHERE tbl.write_version < excluded.write_version
-        ",
-            values
-        );
-        let params: Vec<&(dyn ToSql + Sync)> = params_prep
-            .iter()
-            .map(|x| x.as_ref() as &(dyn ToSql + Sync))
-            .collect();
-        Self::execute_with_retry(&mut self.db, query, params, 1)?;
+        let query = INSERT_NAME_SERVICE.replace("{}", &Self::generate_values(cnt, 5));
+        Self::execute_with_retry(&mut self.db, query, params_prep, 1)?;
         Ok(())
+    }
+
+    fn generate_values(records: usize, columns_per_record: usize) -> String {
+        let mut rows = Vec::new();
+        for i in 0..records {
+            let mut row = Vec::new();
+            for j in 0..columns_per_record {
+                row.push(format!("${}", columns_per_record * i + j + 1));
+            }
+            rows.push(format!("({})", row.join(", ")));
+        }
+        return rows.join(", ");
     }
 
     fn execute_with_retry(
         db: &mut Client,
         query: String,
-        params: Vec<&(dyn ToSql + Sync)>,
+        params_raw: Vec<Box<dyn ToSql + Sync>>,
         retries_remaining: usize,
     ) -> Result<()> {
+        let params: Vec<&(dyn ToSql + Sync)> = params_raw
+            .iter()
+            .map(|x| x.as_ref() as &(dyn ToSql + Sync))
+            .collect();
         match db.execute(&query, &params) {
             Ok(_) => Ok(()),
             Err(e) => {
@@ -656,7 +500,7 @@ impl Worker {
                     // don't re-collide.
                     let mut rng = rand::thread_rng();
                     thread::sleep(time::Duration::from_millis(rng.gen_range(1..20)));
-                    return Self::execute_with_retry(db, query, params, retries_remaining - 1);
+                    return Self::execute_with_retry(db, query, params_raw, retries_remaining - 1);
                 }
                 Err(Box::new(e))
             }
@@ -708,6 +552,81 @@ impl Drop for ProgressCounter {
         progress_bar.finish();
     }
 }
+
+const INSERT_ACCOUNT: &str = "
+INSERT INTO account AS tbl (pubkey, data_len, owner, lamports, executable, rent_epoch, write_version)
+VALUES {}
+ON CONFLICT (pubkey) DO UPDATE SET
+    data_len=excluded.data_len,
+    owner=excluded.owner,
+    lamports=excluded.lamports,
+    executable=excluded.executable,
+    rent_epoch=excluded.rent_epoch,
+    write_version=excluded.write_version
+WHERE tbl.write_version < excluded.write_version
+";
+
+const INSERT_TOKEN_ACCOUNT: &str = "
+INSERT INTO token_account AS tbl (pubkey, mint, owner, amount, delegate, state, is_native, delegated_amount, close_authority, write_version)
+VALUES {}
+ON CONFLICT (pubkey) DO UPDATE SET
+    pubkey=excluded.pubkey,
+    mint=excluded.mint,
+    owner=excluded.owner,
+    amount=excluded.amount,
+    delegate=excluded.delegate,
+    state=excluded.state,
+    is_native=excluded.is_native,
+    delegated_amount=excluded.delegated_amount,
+    close_authority=excluded.close_authority,
+    write_version=excluded.write_version
+WHERE tbl.write_version < excluded.write_version
+";
+
+const INSERT_TOKEN_MINT: &str = "
+INSERT INTO token_mint AS tbl (pubkey, mint_authority, supply, decimals, is_initialized, freeze_authority, write_version)
+VALUES {}
+ON CONFLICT (pubkey) DO UPDATE SET
+    pubkey=excluded.pubkey,
+    mint_authority=excluded.mint_authority,
+    supply=excluded.supply,
+    decimals=excluded.decimals,
+    is_initialized=excluded.is_initialized,
+    freeze_authority=excluded.freeze_authority,
+    write_version=excluded.write_version
+WHERE tbl.write_version < excluded.write_version
+";
+
+const INSERT_TOKEN_METADATA: &str = "
+INSERT INTO token_metadata AS tbl (pubkey, mint, name, symbol, uri, seller_fee_basis_points, primary_sale_happened, is_mutable, edition_nonce, collection_verified, collection_key, write_version)
+VALUES {}
+ON CONFLICT (pubkey) DO UPDATE SET
+    pubkey=excluded.pubkey,
+    mint=excluded.mint,
+    name=excluded.name,
+    symbol=excluded.symbol,
+    uri=excluded.uri,
+    seller_fee_basis_points=excluded.seller_fee_basis_points,
+    primary_sale_happened=excluded.primary_sale_happened,
+    is_mutable=excluded.is_mutable,
+    edition_nonce=excluded.edition_nonce,
+    collection_verified=excluded.collection_verified,
+    collection_key=excluded.collection_key,
+    write_version=excluded.write_version
+WHERE tbl.write_version < excluded.write_version
+";
+
+const INSERT_NAME_SERVICE: &str = "
+INSERT INTO name_service AS tbl (pubkey, owner, record_type, record, write_version)
+VALUES {}
+ON CONFLICT (pubkey) DO UPDATE SET
+    pubkey=excluded.pubkey,
+    owner=excluded.owner,
+    record_type=excluded.record_type,
+    record=excluded.record,
+    write_version=excluded.write_version
+WHERE tbl.write_version < excluded.write_version
+";
 
 const CREATE_TABLES: &str = "
 CREATE TABLE IF NOT EXISTS account (
